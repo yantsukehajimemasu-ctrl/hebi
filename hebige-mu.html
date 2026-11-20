@@ -1,0 +1,445 @@
+  
+<!DOCTYPE html>  
+<html lang="ja">  
+<head>  
+<meta charset="UTF-8">  
+<meta name="viewport" content="width=device-width, initial-scale=1.0">  
+<title>Snake Game</title>  
+<style>  
+* { box-sizing: border-box; }  
+body {  
+  margin: 0;  
+  padding: 20px 12px;  
+  background: #14231c;  
+  color: white;  
+  font-family: Arial, sans-serif;  
+  text-align: center;  
+}  
+h1 { color: #8af58c; margin: 8px; }  
+.game { width: min(100%, 430px); margin: auto; }  
+.panel {  
+  background: #22382c;  
+  border: 1px solid #42664d;  
+  border-radius: 12px;  
+  padding: 12px;  
+  margin: 12px 0;  
+}  
+input {  
+  padding: 12px;  
+  border: 0;  
+  border-radius: 8px;  
+  width: 65%;  
+  font-size: 16px;  
+}  
+button {  
+  border: 0;  
+  border-radius: 9px;  
+  padding: 11px 16px;  
+  background: #75e477;  
+  color: #12301b;  
+  font-weight: bold;  
+  font-size: 15px;  
+  cursor: pointer;  
+  margin: 4px;  
+}  
+button:active { transform: scale(.95); }  
+canvas {  
+  width: 100%;  
+  height: auto;  
+  background: #b6df91;  
+  border: 5px solid #557d43;  
+  border-radius: 10px;  
+  display: block;  
+  touch-action: none;  
+}  
+.stats {  
+  display: flex;  
+  justify-content: space-between;  
+  font-size: 17px;  
+  font-weight: bold;  
+  margin: 12px 0;  
+}  
+#message {  
+  min-height: 25px;  
+  color: #ffe88a;  
+  font-weight: bold;  
+  margin: 10px;  
+}  
+.controls {  
+  display: grid;  
+  grid-template-columns: repeat(3, 65px);  
+  justify-content: center;  
+  gap: 5px;  
+  margin: 15px;  
+}  
+.controls button {  
+  font-size: 23px;  
+  height: 53px;  
+  margin: 0;  
+}  
+.ranking {  
+  text-align: left;  
+}  
+.rankrow {  
+  display: flex;  
+  justify-content: space-between;  
+  padding: 10px;  
+  border-bottom: 1px solid #42664d;  
+}  
+.small { color: #b5c9ba; font-size: 12px; }  
+</style>  
+</head>  
+<body>  
+  
+<div class="game">  
+<h1>🐍 SNAKE GAME</h1>  
+<p class="small">Eat food. Grow longer. Beat your record!</p>  
+  
+<div class="panel" id="login">  
+  <h3>プレイヤー登録</h3>  
+  <input id="playerName" maxlength="12"  
+    placeholder="名前を入力" value="Player">  
+  <button onclick="startGame()">ゲーム開始</button>  
+</div>  
+  
+<div class="stats">  
+  <span>⭐ SCORE: <span id="score">0</span></span>  
+  <span>🏆 BEST: <span id="best">0</span></span>  
+</div>  
+  
+<canvas id="canvas" width="400" height="400"></canvas>  
+  
+<div id="message">名前を入力してゲーム開始！</div>  
+  
+<div>  
+  <button onclick="startGame()">🔄 リスタート</button>  
+  <button onclick="togglePause()">⏸ 一時停止</button>  
+</div>  
+  
+<div class="controls">  
+  <div></div>  
+  <button onclick="changeDirection(0,-1)">⬆️</button>  
+  <div></div>  
+  <button onclick="changeDirection(-1,0)">⬅️</button>  
+  <button onclick="changeDirection(0,1)">⬇️</button>  
+  <button onclick="changeDirection(1,0)">➡️</button>  
+</div>  
+  
+<div class="panel ranking">  
+  <h2>🏆 LOCAL RANKING TOP 5</h2>  
+  <div id="rankingList"></div>  
+  <p class="small">※このブラウザ内に保存されるランキングです。</p>  
+  <button onclick="clearRanking()">ランキング初期化</button>  
+</div>  
+</div>  
+  
+<script>  
+const canvas = document.getElementById("canvas");  
+const ctx = canvas.getContext("2d");  
+const SIZE = 20;  
+const CELLS = 20;  
+  
+let snake, food, direction, nextDirection;  
+let score = 0;  
+let timer = null;  
+let running = false;  
+let paused = false;  
+let player = "Player";  
+  
+function getRanking() {  
+  try {  
+    const data = JSON.parse(  
+      localStorage.getItem("snakeRanking") || "[]"  
+    );  
+    return Array.isArray(data) ? data.filter(x =>  
+      x && typeof x.name === "string" &&  
+      Number.isFinite(x.score) && x.score >= 0  
+    ).slice(0, 100) : [];  
+  } catch {  
+    return [];  
+  }  
+}  
+  
+function saveRanking(data) {  
+  try {  
+    localStorage.setItem("snakeRanking", JSON.stringify(data));  
+  } catch {  
+    document.getElementById("message").textContent =  
+      "保存できませんでした。";  
+  }  
+}  
+  
+function showRanking() {  
+  const ranking = getRanking();  
+  const list = document.getElementById("rankingList");  
+  
+  if (!ranking.length) {  
+    list.innerHTML = "<p>まだ記録がありません！</p>";  
+    return;  
+  }  
+  
+  list.replaceChildren();  
+  
+  ranking.slice(0, 5).forEach((item, i) => {  
+    const row = document.createElement("div");  
+    row.className = "rankrow";  
+  
+    const name = document.createElement("span");  
+    name.textContent =  
+      ["🥇", "🥈", "🥉", "4️⃣", "5️⃣"][i] +  
+      " " + item.name;  
+  
+    const points = document.createElement("b");  
+    points.textContent = item.score + " 点";  
+  
+    row.append(name, points);  
+    list.appendChild(row);  
+  });  
+}  
+  
+function updateBest() {  
+  const ranking = getRanking();  
+  const best = Math.max(  
+    0,  
+    ...ranking.filter(x => x.name === player)  
+      .map(x => x.score)  
+  );  
+  document.getElementById("best").textContent = best;  
+}  
+  
+function startGame() {  
+  const input = document.getElementById("playerName");  
+  player = input.value.trim().slice(0, 12) || "Player";  
+  input.value = player;  
+  
+  document.getElementById("login").style.display = "none";  
+  
+  clearInterval(timer);  
+  
+  snake = [  
+    {x: 10, y: 10},  
+    {x: 9, y: 10},  
+    {x: 8, y: 10}  
+  ];  
+  
+  direction = {x: 1, y: 0};  
+  nextDirection = {x: 1, y: 0};  
+  score = 0;  
+  running = true;  
+  paused = false;  
+  
+  placeFood();  
+  updateScore();  
+  updateBest();  
+  
+  document.getElementById("message").textContent =  
+    "ゲームスタート！";  
+  
+  draw();  
+  timer = setInterval(gameLoop, 130);  
+}  
+  
+function placeFood() {  
+  do {  
+    food = {  
+      x: Math.floor(Math.random() * CELLS),  
+      y: Math.floor(Math.random() * CELLS)  
+    };  
+  } while (snake.some(s => s.x === food.x && s.y === food.y));  
+}  
+  
+function gameLoop() {  
+  if (!running || paused) return;  
+  
+  direction = nextDirection;  
+  
+  const head = {  
+    x: snake[0].x + direction.x,  
+    y: snake[0].y + direction.y  
+  };  
+  
+  const eating = head.x === food.x && head.y === food.y;  
+  
+  if (  
+    head.x < 0 || head.x >= CELLS ||  
+    head.y < 0 || head.y >= CELLS  
+  ) {  
+    gameOver();  
+    return;  
+  }  
+  
+  const body = eating ? snake : snake.slice(0, -1);  
+  
+  if (body.some(s => s.x === head.x && s.y === head.y)) {  
+    gameOver();  
+    return;  
+  }  
+  
+  snake.unshift(head);  
+  
+  if (eating) {  
+    score += 10;  
+    placeFood();  
+    updateScore();  
+  } else {  
+    snake.pop();  
+  }  
+  
+  draw();  
+}  
+  
+function draw() {  
+  ctx.fillStyle = "#b6df91";  
+  ctx.fillRect(0, 0, 400, 400);  
+  
+  // 背景のマス目  
+  ctx.strokeStyle = "rgba(50,90,40,.10)";  
+  for (let i = 0; i <= CELLS; i++) {  
+    ctx.beginPath();  
+    ctx.moveTo(i * SIZE, 0);  
+    ctx.lineTo(i * SIZE, 400);  
+    ctx.stroke();  
+  
+    ctx.beginPath();  
+    ctx.moveTo(0, i * SIZE);  
+    ctx.lineTo(400, i * SIZE);  
+    ctx.stroke();  
+  }  
+  
+  // エサ  
+  ctx.fillStyle = "#ef4949";  
+  ctx.beginPath();  
+  ctx.arc(  
+    food.x * SIZE + 10,  
+    food.y * SIZE + 10,  
+    8, 0, Math.PI * 2  
+  );  
+  ctx.fill();  
+  
+  // ヘビ  
+  snake.forEach((part, i) => {  
+    ctx.fillStyle = i === 0 ? "#176b36" : "#39a950";  
+    ctx.beginPath();  
+    ctx.roundRect(  
+      part.x * SIZE + 1,  
+      part.y * SIZE + 1,  
+      18, 18, 5  
+    );  
+    ctx.fill();  
+  });  
+  
+  // 目  
+  const head = snake[0];  
+  ctx.fillStyle = "white";  
+  ctx.beginPath();  
+  ctx.arc(head.x*SIZE+6, head.y*SIZE+6, 2.5, 0, 7);  
+  ctx.arc(head.x*SIZE+14, head.y*SIZE+6, 2.5, 0, 7);  
+  ctx.fill();  
+}  
+  
+function changeDirection(x, y) {  
+  if (!running || paused) return;  
+  
+  if (x === -direction.x && y === -direction.y) return;  
+  
+  nextDirection = {x, y};  
+}  
+  
+function updateScore() {  
+  document.getElementById("score").textContent = score;  
+}  
+  
+function gameOver() {  
+  running = false;  
+  clearInterval(timer);  
+  
+  const ranking = getRanking();  
+  
+  ranking.push({  
+    name: player,  
+    score: score  
+  });  
+  
+  ranking.sort((a,b) => b.score - a.score);  
+  saveRanking(ranking.slice(0, 100));  
+  
+  showRanking();  
+  updateBest();  
+  
+  document.getElementById("message").textContent =  
+    "💥 GAME OVER！ " + score + " 点！";  
+  
+  document.getElementById("login").style.display = "block";  
+  draw();  
+}  
+  
+function togglePause() {  
+  if (!running) return;  
+  paused = !paused;  
+  
+  document.getElementById("message").textContent =  
+    paused ? "⏸ 一時停止中" : "▶ 再開！";  
+}  
+  
+function clearRanking() {  
+  if (!confirm("ランキングをすべて消去しますか？")) return;  
+  
+  localStorage.removeItem("snakeRanking");  
+  showRanking();  
+  updateBest();  
+}  
+  
+// キーボード操作  
+document.addEventListener("keydown", e => {  
+  const keys = {  
+    ArrowUp: [0,-1],  
+    ArrowDown: [0,1],  
+    ArrowLeft: [-1,0],  
+    ArrowRight: [1,0],  
+    w: [0,-1],  
+    s: [0,1],  
+    a: [-1,0],  
+    d: [1,0]  
+  };  
+  
+  if (keys[e.key]) {  
+    e.preventDefault();  
+    changeDirection(...keys[e.key]);  
+  }  
+  
+  if (e.code === "Space") {  
+    e.preventDefault();  
+    togglePause();  
+  }  
+});  
+  
+// スマホのスワイプ操作  
+let touchStart = null;  
+  
+canvas.addEventListener("pointerdown", e => {  
+  touchStart = {x:e.clientX, y:e.clientY};  
+});  
+  
+canvas.addEventListener("pointerup", e => {  
+  if (!touchStart) return;  
+  
+  const dx = e.clientX - touchStart.x;  
+  const dy = e.clientY - touchStart.y;  
+  
+  if (Math.max(Math.abs(dx),Math.abs(dy)) > 20) {  
+    if (Math.abs(dx) > Math.abs(dy)) {  
+      changeDirection(Math.sign(dx),0);  
+    } else {  
+      changeDirection(0,Math.sign(dy));  
+    }  
+  }  
+  
+  touchStart = null;  
+});  
+  
+showRanking();  
+updateBest();  
+draw();  
+</script>  
+</body>  
+</html>  
